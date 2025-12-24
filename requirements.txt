@@ -8,3 +8,5 @@ plotly
 simpleaudio
 requests
 pandas
+python-dotenv
+os
