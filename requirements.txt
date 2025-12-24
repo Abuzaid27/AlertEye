@@ -1,0 +1,10 @@
+streamlit
+opencv-python
+dlib
+imutils
+numpy
+scipy
+plotly
+simpleaudio
+requests
+pandas
