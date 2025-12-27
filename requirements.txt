@@ -1,5 +1,5 @@
 streamlit
-opencv-python
+opencv-python-headless
 dlib
 imutils
 numpy
@@ -9,4 +9,3 @@ simpleaudio
 requests
 pandas
 python-dotenv
-os
