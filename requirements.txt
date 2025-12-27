@@ -5,6 +5,7 @@ imutils
 numpy
 scipy
 plotly
+simpleaudio
 requests
 pandas
 python-dotenv
