@@ -4,7 +4,11 @@ import cv2
 import os
 import time
 from datetime import datetime
-import simpleaudio as sa
+try:
+    import simpleaudio as sa
+    SIMPLEAUDIO_AVAILABLE = True
+except ImportError:
+    SIMPLEAUDIO_AVAILABLE = False
 import threading
 
 from drowsiness import DrowsinessDetector
@@ -60,10 +64,14 @@ st.session_state["sound_enabled"] = st.sidebar.checkbox("🔊 Sound Alerts", st.
 
 # Alert Function
 def play_alarm(sound_enabled=True):
-    if sound_enabled:  # Passed value, not direct st.session_state access
+    if sound_enabled:
         path = os.path.join("sounds", "alarm.wav")
         if os.path.exists(path):
-            sa.WaveObject.from_wave_file(path).play()
+            if SIMPLEAUDIO_AVAILABLE:
+                sa.WaveObject.from_wave_file(path).play()
+            else:
+                # Fallback for cloud deployment where server-side audio doesn't work
+                print("Audio alert triggered (Server-side audio disabled/unavailable)")
 
 def trigger_alerts(status, sound_enabled=True):
     play_alarm(sound_enabled)
