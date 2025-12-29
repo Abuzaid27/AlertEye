@@ -1,7 +1,5 @@
 streamlit
 opencv-python-headless
-dlib
-imutils
 numpy
 scipy
 plotly
