@@ -18,7 +18,16 @@ from telegram_alert import send_telegram_alert
 from admin_scheduler import run_scheduler
 from admin_dashboard import render_admin_dashboard
 
-# ---------------- INIT ----------------
+
+# ---------- STREAMLIT CLOUD CHECK ----------
+def is_streamlit_cloud():
+    return (
+        os.environ.get("STREAMLIT_RUNTIME_ENV") == "cloud"
+        or os.environ.get("STREAMLIT_SHARING_MODE") == "true"
+    )
+
+
+# ---------- INIT ----------
 init_db()
 ensure_default_admin()
 
@@ -35,7 +44,8 @@ for key, value in default_values.items():
 
 st.set_page_config(page_title="Drowsiness Alert System", layout="wide")
 
-# ---------------- STYLES ----------------
+
+# ---------- STYLES ----------
 st.markdown("""
 <style>
 .blink {
@@ -54,7 +64,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- SIDEBAR ----------------
+
+# ---------- SIDEBAR ----------
 st.session_state["dark_mode"] = st.sidebar.checkbox(
     "🌙 Dark Mode", st.session_state["dark_mode"]
 )
@@ -62,16 +73,18 @@ st.session_state["sound_enabled"] = st.sidebar.checkbox(
     "🔊 Sound Alerts", st.session_state["sound_enabled"]
 )
 
-# ---------------- AUDIO (BROWSER SAFE) ----------------
+
+# ---------- AUDIO (BROWSER SAFE) ----------
 def play_browser_alarm(sound_enabled=True):
     if sound_enabled:
         try:
             with open("assets/alert.wav", "rb") as audio_file:
                 st.audio(audio_file.read(), format="audio/wav")
         except Exception:
-            pass  # never break detection
+            pass
 
-# ---------------- ALERTS ----------------
+
+# ---------- ALERTS ----------
 def trigger_alerts(status, sound_enabled=True):
     play_browser_alarm(sound_enabled)
 
@@ -83,7 +96,8 @@ def trigger_alerts(status, sound_enabled=True):
     send_email_alert(message)
     send_telegram_alert(message)
 
-# ---------------- AUTH ----------------
+
+# ---------- AUTH ----------
 if not st.session_state["user_id"]:
     login_tab, signup_tab = st.tabs(["🔐 Login", "📝 Sign Up"])
 
@@ -108,7 +122,8 @@ if not st.session_state["user_id"]:
             else:
                 st.error("Username already exists.")
 
-# ---------------- MAIN APP ----------------
+
+# ---------- MAIN APP ----------
 else:
     menu = ["Detection"]
     if st.session_state["is_admin"]:
@@ -124,6 +139,20 @@ else:
 - 📊 Total Sessions: {stats['total_logs']}
 - ⚠️ Drowsy Events: **{stats['drowsy_logs']}**
         """)
+
+        # ---- STREAMLIT CLOUD GUARD (ONLY ADDITION) ----
+        if is_streamlit_cloud():
+            st.warning(
+                "🚫 Webcam-based drowsiness detection is disabled on Streamlit Cloud.\n\n"
+                "This is due to Python 3.13 and browser security restrictions.\n\n"
+                "✅ The detection module works fully when run locally."
+            )
+            st.info(
+                "📌 Cloud deployment demonstrates UI, authentication, alerts, logging, "
+                "and admin dashboard features."
+            )
+            st.stop()
+        # ----------------------------------------------
 
         # Thresholds
         ear_thresh = st.sidebar.slider("EAR Threshold", 0.1, 0.4, 0.25, 0.01)
@@ -202,7 +231,8 @@ else:
         st.session_state["user_id"] = None
         st.rerun()
 
-# ---------------- SCHEDULER ----------------
+
+# ---------- SCHEDULER ----------
 if not st.session_state["scheduler_started"]:
     st.session_state["scheduler_started"] = True
     threading.Thread(target=run_scheduler, daemon=True).start()
