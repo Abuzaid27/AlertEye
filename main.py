@@ -9,8 +9,7 @@ import threading
 from drowsiness import DrowsinessDetector
 from db import (
     init_db, add_user, authenticate_user, ensure_default_admin,
-    fetch_users, delete_user, DB_NAME, fetch_user_stats,
-    get_setting, set_setting
+    fetch_user_stats
 )
 from log_handler import log_event
 from email_alert import send_email_alert
@@ -19,15 +18,12 @@ from admin_scheduler import run_scheduler
 from admin_dashboard import render_admin_dashboard
 
 
-# ---------- STREAMLIT CLOUD CHECK ----------
+# ---------------- CLOUD DETECTION ----------------
 def is_streamlit_cloud():
-    return (
-        os.environ.get("STREAMLIT_RUNTIME_ENV") == "cloud"
-        or os.environ.get("STREAMLIT_SHARING_MODE") == "true"
-    )
+    return os.environ.get("STREAMLIT_RUNTIME_ENV") == "cloud"
 
 
-# ---------- INIT ----------
+# ---------------- INIT ----------------
 init_db()
 ensure_default_admin()
 
@@ -38,14 +34,14 @@ default_values = {
     "sound_enabled": True,
     "scheduler_started": False
 }
-for key, value in default_values.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
+for k, v in default_values.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 st.set_page_config(page_title="Drowsiness Alert System", layout="wide")
 
 
-# ---------- STYLES ----------
+# ---------------- STYLES ----------------
 st.markdown("""
 <style>
 .blink {
@@ -56,7 +52,6 @@ st.markdown("""
     border-radius: 8px;
     text-align: center;
     font-weight: bold;
-    font-size: 18px;
 }
 @keyframes blinker {
     50% { opacity: 0.3; }
@@ -65,163 +60,122 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ---------- SIDEBAR ----------
-st.session_state["dark_mode"] = st.sidebar.checkbox(
-    "🌙 Dark Mode", st.session_state["dark_mode"]
-)
-st.session_state["sound_enabled"] = st.sidebar.checkbox(
-    "🔊 Sound Alerts", st.session_state["sound_enabled"]
-)
+# ---------------- AUDIO (CLOUD SAFE) ----------------
+def play_browser_alarm(enabled=True):
+    if not enabled:
+        return
+    try:
+        with open("assets/alert.wav", "rb") as f:
+            st.audio(f.read(), format="audio/wav")
+    except Exception:
+        pass
 
 
-# ---------- AUDIO (BROWSER SAFE) ----------
-def play_browser_alarm(sound_enabled=True):
-    if sound_enabled:
-        try:
-            with open("assets/alert.wav", "rb") as audio_file:
-                st.audio(audio_file.read(), format="audio/wav")
-        except Exception:
-            pass
+def trigger_alerts(status, enabled=True):
+    play_browser_alarm(enabled)
+    msg = f"🚨 Drowsiness detected at {datetime.now()} | Status: {status}"
+    send_email_alert(msg)
+    send_telegram_alert(msg)
 
 
-# ---------- ALERTS ----------
-def trigger_alerts(status, sound_enabled=True):
-    play_browser_alarm(sound_enabled)
-
-    message = (
-        f"🚨 Drowsiness detected at "
-        f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Status: {status}"
-    )
-
-    send_email_alert(message)
-    send_telegram_alert(message)
-
-
-# ---------- AUTH ----------
+# ---------------- AUTH ----------------
 if not st.session_state["user_id"]:
-    login_tab, signup_tab = st.tabs(["🔐 Login", "📝 Sign Up"])
+    login, signup = st.tabs(["Login", "Sign Up"])
 
-    with login_tab:
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+    with login:
+        u = st.text_input("Username")
+        p = st.text_input("Password", type="password")
         if st.button("Login"):
-            user = authenticate_user(username, password)
+            user = authenticate_user(u, p)
             if user:
                 st.session_state["user_id"], st.session_state["is_admin"] = user
-                st.success(f"Welcome {username}!")
                 st.rerun()
             else:
-                st.error("Invalid credentials.")
+                st.error("Invalid credentials")
 
-    with signup_tab:
-        new_user = st.text_input("New Username")
-        new_pass = st.text_input("New Password", type="password")
+    with signup:
+        nu = st.text_input("New Username")
+        np = st.text_input("New Password", type="password")
         if st.button("Register"):
-            if add_user(new_user, new_pass):
-                st.success("Account created. Please log in.")
+            if add_user(nu, np):
+                st.success("Account created")
             else:
-                st.error("Username already exists.")
+                st.error("Username exists")
 
 
-# ---------- MAIN APP ----------
+# ---------------- MAIN APP ----------------
 else:
     menu = ["Detection"]
     if st.session_state["is_admin"]:
         menu.append("Admin Dashboard")
 
-    page = st.sidebar.radio("📌 Navigation", menu)
+    page = st.sidebar.radio("Navigation", menu)
 
     if page == "Detection":
         stats = fetch_user_stats(st.session_state["user_id"])
-        st.subheader(f"👤 {stats['username']}")
-        st.markdown(f"""
-- 🕒 Last Login: {stats['last_login']}
-- 📊 Total Sessions: {stats['total_logs']}
-- ⚠️ Drowsy Events: **{stats['drowsy_logs']}**
-        """)
+        st.subheader(stats["username"])
 
-        # ---- STREAMLIT CLOUD GUARD (ONLY ADDITION) ----
+        # 🔒 CLOUD GUARD (THIS IS THE KEY FIX)
         if is_streamlit_cloud():
             st.warning(
-                "🚫 Webcam-based drowsiness detection is disabled on Streamlit Cloud.\n\n"
-                "This is due to Python 3.13 and browser security restrictions.\n\n"
-                "✅ The detection module works fully when run locally."
-            )
-            st.info(
-                "📌 Cloud deployment demonstrates UI, authentication, alerts, logging, "
-                "and admin dashboard features."
+                "🚫 Webcam-based detection is disabled on Streamlit Cloud.\n\n"
+                "✅ Run the app locally for full functionality."
             )
             st.stop()
-        # ----------------------------------------------
 
-        # Thresholds
-        ear_thresh = st.sidebar.slider("EAR Threshold", 0.1, 0.4, 0.25, 0.01)
-        mar_thresh = st.sidebar.slider("MAR Threshold", 0.3, 0.7, 0.5, 0.01)
-        frame_check = st.sidebar.slider("Frame Check", 10, 40, 20, 1)
+        ear = st.sidebar.slider("EAR Threshold", 0.1, 0.4, 0.25)
+        mar = st.sidebar.slider("MAR Threshold", 0.3, 0.7, 0.5)
+        frames = st.sidebar.slider("Frame Check", 10, 40, 20)
 
-        start_btn = st.button("Start Detection")
-        stop_btn = st.button("Stop Detection")
+        start = st.button("Start Detection")
+        stop = st.button("Stop Detection")
 
         detector = DrowsinessDetector(
             "models/shape_predictor_68_face_landmarks.dat",
-            ear_thresh=ear_thresh,
-            mar_thresh=mar_thresh,
-            frame_check=frame_check
+            ear_thresh=ear,
+            mar_thresh=mar,
+            frame_check=frames
         )
 
-        FRAME_WINDOW = st.image([])
-        status_placeholder = st.empty()
-        alert_placeholder = st.empty()
+        frame_box = st.image([])
+        alert_box = st.empty()
 
-        last_log_time = 0
-        alert_triggered = False
+        last_log = 0
+        alerted = False
 
-        if start_btn:
+        if start:
             cap = cv2.VideoCapture(0)
-
             while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    st.error("Webcam error.")
+                ok, frame = cap.read()
+                if not ok:
                     break
 
-                frame = cv2.flip(frame, 1)
-                frame, status, ear, mar = detector.analyze_frame(frame)
-
-                FRAME_WINDOW.image(frame, channels="BGR")
-                status_placeholder.write(
-                    f"EAR: {ear:.2f} | MAR: {mar:.2f} | Status: {status}"
-                )
+                frame, status, ear_v, mar_v = detector.analyze_frame(frame)
+                frame_box.image(frame, channels="BGR")
 
                 now = time.time()
-
                 if status == "Drowsy":
-                    if now - last_log_time > 10:
-                        log_event(ear, status, st.session_state["user_id"])
-                        last_log_time = now
+                    if now - last_log > 10:
+                        log_event(ear_v, status, st.session_state["user_id"])
+                        last_log = now
 
-                    if not alert_triggered:
-                        alert_placeholder.markdown(
-                            "<div class='blink'>🚨 Drowsiness Detected!</div>",
+                    if not alerted:
+                        alert_box.markdown(
+                            "<div class='blink'>🚨 Drowsiness Detected</div>",
                             unsafe_allow_html=True
                         )
-
-                        sound_enabled_value = st.session_state.get("sound_enabled", True)
-
                         threading.Thread(
                             target=trigger_alerts,
-                            args=(status, sound_enabled_value),
+                            args=(status, st.session_state["sound_enabled"]),
                             daemon=True
                         ).start()
-
-                        alert_triggered = True
+                        alerted = True
                 else:
-                    alert_triggered = False
-                    alert_placeholder.empty()
+                    alerted = False
+                    alert_box.empty()
 
-                if stop_btn:
+                if stop:
                     break
-
             cap.release()
 
     elif page == "Admin Dashboard":
@@ -232,7 +186,7 @@ else:
         st.rerun()
 
 
-# ---------- SCHEDULER ----------
+# ---------------- SCHEDULER ----------------
 if not st.session_state["scheduler_started"]:
     st.session_state["scheduler_started"] = True
     threading.Thread(target=run_scheduler, daemon=True).start()
