@@ -143,10 +143,7 @@ else:
                 "🚫 Webcam-based drowsiness detection is disabled on Streamlit Cloud.\n\n"
                 "✅ Run this project locally to enable real-time detection."
             )
-            st.info(
-                "Cloud version demonstrates authentication, alerts, logging, "
-                "and admin dashboard features."
-            )
+           
             st.stop()
 
         # ⬇️ SAFE: import cv2 ONLY locally
