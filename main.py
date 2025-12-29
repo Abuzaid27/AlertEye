@@ -4,11 +4,6 @@ import cv2
 import os
 import time
 from datetime import datetime
-try:
-    import simpleaudio as sa
-    SIMPLEAUDIO_AVAILABLE = True
-except ImportError:
-    SIMPLEAUDIO_AVAILABLE = False
 import threading
 
 from drowsiness import DrowsinessDetector
@@ -23,11 +18,10 @@ from telegram_alert import send_telegram_alert
 from admin_scheduler import run_scheduler
 from admin_dashboard import render_admin_dashboard
 
-# Initialize DB and default admin
+# ---------------- INIT ----------------
 init_db()
 ensure_default_admin()
 
-# Ensure required session state keys exist
 default_values = {
     "user_id": None,
     "is_admin": False,
@@ -41,47 +35,58 @@ for key, value in default_values.items():
 
 st.set_page_config(page_title="Drowsiness Alert System", layout="wide")
 
-# CSS and theme
+# ---------------- STYLES ----------------
 st.markdown("""
-    <style>
-    .blink {
-        animation: blinker 1s linear infinite;
-        background-color: #ff4b4b;
-        color: white;
-        padding: 10px;
-        border-radius: 8px;
-        text-align: center;
-        font-weight: bold;
-        font-size: 18px;
-    }
-    @keyframes blinker { 50% { opacity: 0.3; } }
-    </style>
+<style>
+.blink {
+    animation: blinker 1s linear infinite;
+    background-color: #ff4b4b;
+    color: white;
+    padding: 10px;
+    border-radius: 8px;
+    text-align: center;
+    font-weight: bold;
+    font-size: 18px;
+}
+@keyframes blinker {
+    50% { opacity: 0.3; }
+}
+</style>
 """, unsafe_allow_html=True)
 
-# Sidebar controls
-st.session_state["dark_mode"] = st.sidebar.checkbox("🌙 Dark Mode", st.session_state["dark_mode"])
-st.session_state["sound_enabled"] = st.sidebar.checkbox("🔊 Sound Alerts", st.session_state["sound_enabled"])
+# ---------------- SIDEBAR ----------------
+st.session_state["dark_mode"] = st.sidebar.checkbox(
+    "🌙 Dark Mode", st.session_state["dark_mode"]
+)
+st.session_state["sound_enabled"] = st.sidebar.checkbox(
+    "🔊 Sound Alerts", st.session_state["sound_enabled"]
+)
 
-# Alert Function
-def play_alarm(sound_enabled=True):
+# ---------------- AUDIO (BROWSER SAFE) ----------------
+def play_browser_alarm(sound_enabled=True):
     if sound_enabled:
-        path = os.path.join("sounds", "alarm.wav")
-        if os.path.exists(path):
-            if SIMPLEAUDIO_AVAILABLE:
-                sa.WaveObject.from_wave_file(path).play()
-            else:
-                # Fallback for cloud deployment where server-side audio doesn't work
-                print("Audio alert triggered (Server-side audio disabled/unavailable)")
+        try:
+            with open("assets/alert.wav", "rb") as audio_file:
+                st.audio(audio_file.read(), format="audio/wav")
+        except Exception:
+            pass  # never break detection
 
+# ---------------- ALERTS ----------------
 def trigger_alerts(status, sound_enabled=True):
-    play_alarm(sound_enabled)
-    message = f"🚨 Drowsiness detected at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Status: {status}"
+    play_browser_alarm(sound_enabled)
+
+    message = (
+        f"🚨 Drowsiness detected at "
+        f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Status: {status}"
+    )
+
     send_email_alert(message)
     send_telegram_alert(message)
 
-# Login/Sign-Up
+# ---------------- AUTH ----------------
 if not st.session_state["user_id"]:
     login_tab, signup_tab = st.tabs(["🔐 Login", "📝 Sign Up"])
+
     with login_tab:
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
@@ -102,22 +107,25 @@ if not st.session_state["user_id"]:
                 st.success("Account created. Please log in.")
             else:
                 st.error("Username already exists.")
+
+# ---------------- MAIN APP ----------------
 else:
     menu = ["Detection"]
     if st.session_state["is_admin"]:
         menu.append("Admin Dashboard")
+
     page = st.sidebar.radio("📌 Navigation", menu)
 
     if page == "Detection":
         stats = fetch_user_stats(st.session_state["user_id"])
         st.subheader(f"👤 {stats['username']}")
         st.markdown(f"""
-            - 🕒 Last Login: {stats['last_login']}
-            - 📊 Total Sessions: {stats['total_logs']}
-            - ⚠️ Drowsy Events: **{stats['drowsy_logs']}**
+- 🕒 Last Login: {stats['last_login']}
+- 📊 Total Sessions: {stats['total_logs']}
+- ⚠️ Drowsy Events: **{stats['drowsy_logs']}**
         """)
 
-        # Threshold Config
+        # Thresholds
         ear_thresh = st.sidebar.slider("EAR Threshold", 0.1, 0.4, 0.25, 0.01)
         mar_thresh = st.sidebar.slider("MAR Threshold", 0.3, 0.7, 0.5, 0.01)
         frame_check = st.sidebar.slider("Frame Check", 10, 40, 20, 1)
@@ -141,6 +149,7 @@ else:
 
         if start_btn:
             cap = cv2.VideoCapture(0)
+
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
@@ -149,8 +158,11 @@ else:
 
                 frame = cv2.flip(frame, 1)
                 frame, status, ear, mar = detector.analyze_frame(frame)
+
                 FRAME_WINDOW.image(frame, channels="BGR")
-                status_placeholder.write(f"EAR: {ear:.2f} | MAR: {mar:.2f} | Status: {status}")
+                status_placeholder.write(
+                    f"EAR: {ear:.2f} | MAR: {mar:.2f} | Status: {status}"
+                )
 
                 now = time.time()
 
@@ -160,13 +172,19 @@ else:
                         last_log_time = now
 
                     if not alert_triggered:
-                        alert_placeholder.markdown("<div class='blink'>🚨 Drowsiness Detected!</div>", unsafe_allow_html=True)
+                        alert_placeholder.markdown(
+                            "<div class='blink'>🚨 Drowsiness Detected!</div>",
+                            unsafe_allow_html=True
+                        )
+
                         sound_enabled_value = st.session_state.get("sound_enabled", True)
+
                         threading.Thread(
                             target=trigger_alerts,
                             args=(status, sound_enabled_value),
                             daemon=True
                         ).start()
+
                         alert_triggered = True
                 else:
                     alert_triggered = False
@@ -174,6 +192,7 @@ else:
 
                 if stop_btn:
                     break
+
             cap.release()
 
     elif page == "Admin Dashboard":
@@ -183,7 +202,7 @@ else:
         st.session_state["user_id"] = None
         st.rerun()
 
-# Scheduler thread
+# ---------------- SCHEDULER ----------------
 if not st.session_state["scheduler_started"]:
     st.session_state["scheduler_started"] = True
     threading.Thread(target=run_scheduler, daemon=True).start()
